@@ -32,6 +32,11 @@
   gather_facts: true
 
   tasks:
+    - name: Check that postgres user exists
+      ansible.builtin.getent:
+        database: passwd
+        key: postgres
+
     - name: Check ash-script cron entry for postgres user
       ansible.builtin.command:
         cmd: crontab -l -u {{ ash_script_owner }}
@@ -84,9 +89,8 @@
 
     - name: Run ash-script once as postgres before adding cron
       ansible.builtin.command:
-        cmd: "{{ ash_script_path }}"
+        cmd: "sudo -u {{ ash_script_owner }} {{ ash_script_path }}"
       become: true
-      become_user: "{{ ash_script_owner }}"
       register: ash_script_run
       changed_when: ash_script_run.rc == 0
 
