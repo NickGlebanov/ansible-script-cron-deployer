@@ -1,0 +1,3 @@
+---
+ash_script_gitlab_url: "https://gitlab.com/api/v4/projects/83785845/repository/files/ash.sh/raw?ref=main"
+ash_script_gitlab_token: "{{ gitlab_token_default }}"

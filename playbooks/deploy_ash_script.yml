@@ -1,0 +1,103 @@
+---
+# Раскатка ash-script на серверах БД по контурам.
+#
+# Примеры запуска:
+#   ansible-playbook playbooks/deploy_ash_script.yml -e 'contours=["DEV","TEST"]'
+#   ansible-playbook playbooks/deploy_ash_script.yml -e contours=DEV,AT -e gitlab_token_default=glpat-xxx
+#
+- name: Validate and resolve contours
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Normalize contours parameter
+      ansible.builtin.set_fact:
+        contours_resolved: "{{ contours if contours is not string else contours.split(',') | map('trim') | list }}"
+
+    - name: Show contours_resolved
+      ansible.builtin.debug:
+        var: contours_resolved
+
+    - name: Validate contours parameter
+      ansible.builtin.assert:
+        that:
+          - contours is defined
+          - contours_resolved | length > 0
+          - (contours_resolved | difference(['DEV', 'AT', 'TEST', 'PROD'])) | length == 0
+        fail_msg: >-
+          Укажите список контуров: -e 'contours=["DEV","TEST"]' или -e contours=DEV,TEST.
+          Допустимые значения: DEV, AT, TEST, PROD.
+
+- name: Deploy ash-script to DB servers
+  hosts: "{{ hostvars['localhost']['contours_resolved'] }}"
+  gather_facts: true
+
+  tasks:
+    - name: Check ash-script cron entry for postgres user
+      ansible.builtin.command:
+        cmd: crontab -l -u {{ ash_script_owner }}
+      register: postgres_crontab
+      changed_when: false
+      failed_when: false
+
+    - name: Detect existing cron job
+      ansible.builtin.set_fact:
+        ash_script_cron_exists: "{{ ash_script_cron in postgres_crontab.stdout }}"
+
+    - name: Skip host when cron entry already present
+      ansible.builtin.meta: end_host
+      when: ash_script_cron_exists
+
+    - name: Check if ash-script file exists
+      ansible.builtin.stat:
+        path: "{{ ash_script_path }}"
+      register: ash_script_file
+
+    - name: Ensure ash-script directory exists
+      ansible.builtin.file:
+        path: "{{ ash_script_dir }}"
+        state: directory
+        owner: "{{ ash_script_owner }}"
+        group: "{{ ash_script_group }}"
+        mode: "0750"
+      when: not ash_script_file.stat.exists
+
+    - name: Download ash-script from GitLab
+      ansible.builtin.get_url:
+        url: "{{ ash_script_gitlab_url }}"
+        dest: "{{ ash_script_path }}"
+        mode: "0750"
+        owner: "{{ ash_script_owner }}"
+        group: "{{ ash_script_group }}"
+        headers:
+          PRIVATE-TOKEN: "{{ ash_script_gitlab_token }}"
+        force: false
+      when: not ash_script_file.stat.exists
+
+    - name: Ensure ash-script is executable and owned by postgres
+      ansible.builtin.file:
+        path: "{{ ash_script_path }}"
+        state: file
+        owner: "{{ ash_script_owner }}"
+        group: "{{ ash_script_group }}"
+        mode: "0750"
+      when: ash_script_file.stat.exists
+
+    - name: Run ash-script once as postgres before adding cron
+      ansible.builtin.command:
+        cmd: "{{ ash_script_path }}"
+      become: true
+      become_user: "{{ ash_script_owner }}"
+      register: ash_script_run
+      changed_when: ash_script_run.rc == 0
+
+    - name: Add ash-script to postgres crontab
+      ansible.builtin.cron:
+        name: "{{ ash_script_cron_name }}"
+        user: "{{ ash_script_owner }}"
+        minute: "*"
+        hour: "*"
+        day: "*"
+        month: "*"
+        weekday: "*"
+        job: "{{ ash_script_path }}"
+        state: present

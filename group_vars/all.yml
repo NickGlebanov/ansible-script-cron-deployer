@@ -1,0 +1,13 @@
+---
+# Общие настройки ash-script
+ash_script_dir: /var/lib/pgsql/ash-script
+ash_script_path: /var/lib/pgsql/ash-script/ash-script.sh
+ash_script_owner: postgres
+ash_script_group: postgres
+ash_script_cron: "* * * * * /var/lib/pgsql/ash-script/ash-script.sh"
+ash_script_cron_name: ash-script
+
+# Токен GitLab по умолчанию (для большинства контуров).
+# Переопределить при запуске: -e gitlab_token_default=...
+# Или через ansible-vault: group_vars/all/vault.yml
+gitlab_token_default: "{{ vault_gitlab_token_default | default('CHANGE_ME') }}"
