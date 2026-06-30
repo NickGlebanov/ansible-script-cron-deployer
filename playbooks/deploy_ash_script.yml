@@ -2,33 +2,12 @@
 # Раскатка ash-script на серверах БД по контурам.
 #
 # Примеры запуска:
-#   ansible-playbook playbooks/deploy_ash_script.yml -e 'contours=["DEV","TEST"]'
-#   ansible-playbook playbooks/deploy_ash_script.yml -e contours=DEV,AT -e gitlab_token_default=glpat-xxx
+#   ansible-playbook -i inventory/cft-dev.ini playbooks/deploy_ash_script.yml -e "target=func_db" -e gitlab_token=111
 #
-- name: Validate and resolve contours
-  hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: Normalize contours parameter
-      ansible.builtin.set_fact:
-        contours_resolved: "{{ contours if contours is not string else contours.split(',') | map('trim') | list }}"
-
-    - name: Show contours_resolved
-      ansible.builtin.debug:
-        var: contours_resolved
-
-    - name: Validate contours parameter
-      ansible.builtin.assert:
-        that:
-          - contours is defined
-          - contours_resolved | length > 0
-          - (contours_resolved | difference(['DEV', 'AT', 'TEST', 'PROD'])) | length == 0
-        fail_msg: >-
-          Укажите список контуров: -e 'contours=["DEV","TEST"]' или -e contours=DEV,TEST.
-          Допустимые значения: DEV, AT, TEST, PROD.
-
 - name: Deploy ash-script to DB servers
-  hosts: "{{ hostvars['localhost']['contours_resolved'] }}"
+  hosts: "{{ groups[target] | intersect(groups['func_db']) }}"
+  vars_files:
+    - ../vault/ash_settings.yml
   gather_facts: true
 
   tasks:
@@ -74,7 +53,7 @@
         owner: "{{ ash_script_owner }}"
         group: "{{ ash_script_group }}"
         headers:
-          PRIVATE-TOKEN: "{{ ash_script_gitlab_token }}"
+          PRIVATE-TOKEN: "{{ gitlab_token }}"
         force: false
       when: not ash_script_file.stat.exists
 
